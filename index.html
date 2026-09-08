@@ -140,6 +140,23 @@
       transition: transform .15s, box-shadow .15s;
     }
     .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 10px 24px -6px rgba(26,63,143,0.65); }
+    .btn-primary:disabled {
+      opacity: 0.75;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .btn-primary .spinner {
+      display: inline-block;
+      width: 15px;
+      height: 15px;
+      border: 2px solid rgba(255,255,255,0.4);
+      border-top-color: #fff;
+      border-radius: 50%;
+      vertical-align: -3px;
+      margin-right: 8px;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
     .error-msg { color: #dc2626; font-size: 13px; margin-top: 8px; text-align: center; }
 
     /* Dashboard */
@@ -526,7 +543,7 @@
         <input type="password" id="password" placeholder="Password">
         <button type="button" class="toggle-eye" onclick="togglePassword()" aria-label="Tampilkan password">👁</button>
       </div>
-      <button class="btn-primary" onclick="doLogin()">Masuk</button>
+      <button class="btn-primary" id="loginBtn" onclick="doLogin()"><span id="loginBtnText">Masuk</span></button>
       <div class="error-msg" id="loginError"></div>
     </div>
   </div>
@@ -687,6 +704,13 @@
     if (cb) cb();
   };
 
+  function setLoginLoading(isLoading) {
+    var btn = document.getElementById('loginBtn');
+    var text = document.getElementById('loginBtnText');
+    btn.disabled = isLoading;
+    text.innerHTML = isLoading ? '<span class="spinner"></span>Memproses...' : 'Masuk';
+  }
+
   function doLogin() {
     var u = document.getElementById('username').value.trim();
     var p = document.getElementById('password').value.trim();
@@ -695,6 +719,7 @@
       document.getElementById('loginError').innerText = 'Isi username dan password.';
       return;
     }
+    setLoginLoading(true);
     callApi('login', { username: u, password: p }).then(function(res) {
       if (res.success) {
         TOKEN = res.token;
@@ -707,6 +732,8 @@
       }
     }).catch(function(err) {
       document.getElementById('loginError').innerText = 'Terjadi kesalahan: ' + err.message;
+    }).finally(function() {
+      setLoginLoading(false);
     });
   }
 
