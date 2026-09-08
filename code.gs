@@ -21,8 +21,16 @@ function debugCekNamaSheet() {
   Logger.log('Mencari SHEET_MITRA = "' + SHEET_MITRA + '" -> ditemukan: ' + (ss.getSheetByName(SHEET_MITRA) !== null));
 }
 
-// ---------- HALAMAN WEB (dipakai kalau diakses langsung dari URL Apps Script) ----------
+// ---------- HALAMAN WEB / API JSON ----------
+// Kalau diakses langsung tanpa parameter ?action=..., tampilkan halaman HTML (untuk tes langsung dari Apps Script).
+// Kalau ada ?action=..., dijalankan sebagai API JSON (dipakai oleh frontend yang di-hosting terpisah, misal GitHub Pages).
+// Frontend memanggil pakai fetch() method GET dengan parameter di URL -
+// ini sengaja dipakai (bukan POST) karena GET tidak kena masalah redirect/CORS preflight di Apps Script Web App.
 function doGet(e) {
+  var params = (e && e.parameter) || {};
+  if (params.action) {
+    return handleApiRequest_(params);
+  }
   return HtmlService.createTemplateFromFile('Index')
     .evaluate()
     .setTitle('Verifikasi Mitra')
@@ -34,38 +42,41 @@ function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
 
-// ---------- API JSON (dipakai oleh frontend yang di-hosting terpisah, misal GitHub Pages) ----------
-// Frontend memanggil URL deployment ini dengan fetch(), method POST,
-// header Content-Type: text/plain;charset=utf-8 (supaya tidak kena preflight CORS),
-// body: JSON.stringify({ action: '...', ...data lain })
+// Tetap disediakan untuk kompatibilitas kalau ada yang memanggil via POST.
 function doPost(e) {
+  var params = {};
+  if (e && e.postData && e.postData.contents) {
+    try { params = JSON.parse(e.postData.contents); } catch (err) {}
+  }
+  return handleApiRequest_(params);
+}
+
+function handleApiRequest_(params) {
   var out;
   try {
-    var body = {};
-    if (e && e.postData && e.postData.contents) {
-      body = JSON.parse(e.postData.contents);
-    }
-    var action = body.action;
+    var action = params.action;
     var result;
+    var data = parseIfJson_(params.data);
+    var rowIndex = params.rowIndex ? parseInt(params.rowIndex, 10) : null;
 
     switch (action) {
       case 'login':
-        result = loginMitra(body.username, body.password);
+        result = loginMitra(params.username, params.password);
         break;
       case 'logout':
-        result = logoutMitra(body.token);
+        result = logoutMitra(params.token);
         break;
       case 'getData':
-        result = getPelangganData(body.token);
+        result = getPelangganData(params.token);
         break;
       case 'update':
-        result = updatePelanggan(body.token, body.rowIndex, body.data);
+        result = updatePelanggan(params.token, rowIndex, data);
         break;
       case 'add':
-        result = addPelanggan(body.token, body.data);
+        result = addPelanggan(params.token, data);
         break;
       case 'delete':
-        result = deletePelanggan(body.token, body.rowIndex);
+        result = deletePelanggan(params.token, rowIndex);
         break;
       default:
         result = { success: false, message: 'Aksi tidak dikenali: ' + action };
@@ -76,6 +87,14 @@ function doPost(e) {
   }
   return ContentService.createTextOutput(JSON.stringify(out))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+// 'data' bisa datang sebagai string JSON (dari query GET) atau sudah berupa object (dari POST JSON)
+function parseIfJson_(value) {
+  if (typeof value === 'string') {
+    try { return JSON.parse(value); } catch (err) { return value; }
+  }
+  return value;
 }
 
 // ---------- LOGIN / LOGOUT ----------

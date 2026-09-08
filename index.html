@@ -622,12 +622,14 @@
   var API_URL = 'PASTE_URL_WEB_APP_APPS_SCRIPT_DISINI';
 
   function callApi(action, payload) {
-    var body = Object.assign({ action: action }, payload || {});
-    return fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // hindari CORS preflight
-      body: JSON.stringify(body)
-    }).then(function(res) {
+    var params = Object.assign({ action: action }, payload || {});
+    var query = Object.keys(params).map(function(key) {
+      var value = params[key];
+      if (value !== null && typeof value === 'object') value = JSON.stringify(value);
+      if (value === undefined || value === null) value = '';
+      return encodeURIComponent(key) + '=' + encodeURIComponent(value);
+    }).join('&');
+    return fetch(API_URL + '?' + query, { method: 'GET' }).then(function(res) {
       if (!res.ok) throw new Error('HTTP ' + res.status);
       return res.json();
     });
