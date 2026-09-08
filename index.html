@@ -613,6 +613,26 @@
   </div>
 
 <script>
+  // ============================================================
+  // KONFIGURASI API
+  // Isi dengan URL deployment Web App Apps Script (yang berakhiran /exec).
+  // Cara ambil: di Apps Script Editor -> Deploy -> Manage deployments
+  // -> salin "Web app URL".
+  // ============================================================
+  var API_URL = 'PASTE_URL_WEB_APP_APPS_SCRIPT_DISINI';
+
+  function callApi(action, payload) {
+    var body = Object.assign({ action: action }, payload || {});
+    return fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // hindari CORS preflight
+      body: JSON.stringify(body)
+    }).then(function(res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    });
+  }
+
   var TOKEN = null;
   var ALL_DATA = [];
 
@@ -673,7 +693,7 @@
       document.getElementById('loginError').innerText = 'Isi username dan password.';
       return;
     }
-    google.script.run.withSuccessHandler(function(res) {
+    callApi('login', { username: u, password: p }).then(function(res) {
       if (res.success) {
         TOKEN = res.token;
         document.getElementById('loginScreen').style.display = 'none';
@@ -683,13 +703,13 @@
       } else {
         document.getElementById('loginError').innerText = res.message;
       }
-    }).withFailureHandler(function(err) {
+    }).catch(function(err) {
       document.getElementById('loginError').innerText = 'Terjadi kesalahan: ' + err.message;
-    }).loginMitra(u, p);
+    });
   }
 
   function doLogout() {
-    google.script.run.logoutMitra(TOKEN);
+    callApi('logout', { token: TOKEN }).catch(function() {});
     TOKEN = null;
     ALL_DATA = [];
     document.getElementById('dashboard').style.display = 'none';
@@ -707,7 +727,7 @@
 
   function loadData() {
     document.getElementById('tableWrapper').innerHTML = skeletonHtml();
-    google.script.run.withSuccessHandler(function(res) {
+    callApi('getData', { token: TOKEN }).then(function(res) {
       if (res.success) {
         ALL_DATA = res.data;
         updateSummary();
@@ -717,10 +737,10 @@
         document.getElementById('tableWrapper').innerHTML = '<div class="loading">' + res.message + '</div>';
         showToast(res.message, 'error');
       }
-    }).withFailureHandler(function(err) {
+    }).catch(function(err) {
       document.getElementById('tableWrapper').innerHTML = '<div class="loading">Gagal memuat data.</div>';
       showToast('Gagal memuat data: ' + err.message, 'error');
-    }).getPelangganData(TOKEN);
+    });
   }
 
   function updateSummary() {
@@ -853,7 +873,7 @@
       latitude: document.getElementById('editLatitude').value,
       longitude: document.getElementById('editLongitude').value
     };
-    google.script.run.withSuccessHandler(function(res) {
+    callApi('update', { token: TOKEN, rowIndex: rowIndex, data: updatedData }).then(function(res) {
       if (res.success) {
         closeModal();
         loadData();
@@ -861,23 +881,23 @@
       } else {
         showToast(res.message, 'error');
       }
-    }).withFailureHandler(function(err) {
+    }).catch(function(err) {
       showToast('Gagal menyimpan: ' + err.message, 'error');
-    }).updatePelanggan(TOKEN, rowIndex, updatedData);
+    });
   }
 
   function confirmDelete(rowIndex) {
     showConfirm('Yakin ingin menghapus data pelanggan ini? Tindakan ini tidak bisa dibatalkan.', function() {
-      google.script.run.withSuccessHandler(function(res) {
+      callApi('delete', { token: TOKEN, rowIndex: rowIndex }).then(function(res) {
         if (res.success) {
           loadData();
           showToast('Data pelanggan berhasil dihapus.', 'success');
         } else {
           showToast(res.message, 'error');
         }
-      }).withFailureHandler(function(err) {
+      }).catch(function(err) {
         showToast('Gagal menghapus: ' + err.message, 'error');
-      }).deletePelanggan(TOKEN, rowIndex);
+      });
     }, 'Hapus Data Pelanggan');
   }
 
@@ -910,7 +930,7 @@
       latitude: document.getElementById('addLatitude').value,
       longitude: document.getElementById('addLongitude').value
     };
-    google.script.run.withSuccessHandler(function(res) {
+    callApi('add', { token: TOKEN, data: newData }).then(function(res) {
       if (res.success) {
         closeAddModal();
         loadData();
@@ -918,9 +938,9 @@
       } else {
         showToast(res.message, 'error');
       }
-    }).withFailureHandler(function(err) {
+    }).catch(function(err) {
       showToast('Gagal menambahkan: ' + err.message, 'error');
-    }).addPelanggan(TOKEN, newData);
+    });
   }
 </script>
 </body>

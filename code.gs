@@ -21,7 +21,7 @@ function debugCekNamaSheet() {
   Logger.log('Mencari SHEET_MITRA = "' + SHEET_MITRA + '" -> ditemukan: ' + (ss.getSheetByName(SHEET_MITRA) !== null));
 }
 
-// ---------- HALAMAN WEB ----------
+// ---------- HALAMAN WEB (dipakai kalau diakses langsung dari URL Apps Script) ----------
 function doGet(e) {
   return HtmlService.createTemplateFromFile('Index')
     .evaluate()
@@ -32,6 +32,50 @@ function doGet(e) {
 
 function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
+
+// ---------- API JSON (dipakai oleh frontend yang di-hosting terpisah, misal GitHub Pages) ----------
+// Frontend memanggil URL deployment ini dengan fetch(), method POST,
+// header Content-Type: text/plain;charset=utf-8 (supaya tidak kena preflight CORS),
+// body: JSON.stringify({ action: '...', ...data lain })
+function doPost(e) {
+  var out;
+  try {
+    var body = {};
+    if (e && e.postData && e.postData.contents) {
+      body = JSON.parse(e.postData.contents);
+    }
+    var action = body.action;
+    var result;
+
+    switch (action) {
+      case 'login':
+        result = loginMitra(body.username, body.password);
+        break;
+      case 'logout':
+        result = logoutMitra(body.token);
+        break;
+      case 'getData':
+        result = getPelangganData(body.token);
+        break;
+      case 'update':
+        result = updatePelanggan(body.token, body.rowIndex, body.data);
+        break;
+      case 'add':
+        result = addPelanggan(body.token, body.data);
+        break;
+      case 'delete':
+        result = deletePelanggan(body.token, body.rowIndex);
+        break;
+      default:
+        result = { success: false, message: 'Aksi tidak dikenali: ' + action };
+    }
+    out = result;
+  } catch (err) {
+    out = { success: false, message: 'Terjadi kesalahan server: ' + err.message };
+  }
+  return ContentService.createTextOutput(JSON.stringify(out))
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
 // ---------- LOGIN / LOGOUT ----------
