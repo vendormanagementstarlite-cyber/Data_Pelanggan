@@ -72,9 +72,6 @@ function handleApiRequest_(params) {
       case 'update':
         result = updatePelanggan(params.token, rowIndex, data);
         break;
-      case 'add':
-        result = addPelanggan(params.token, data);
-        break;
       case 'delete':
         result = deletePelanggan(params.token, rowIndex);
         break;
@@ -95,6 +92,42 @@ function parseIfJson_(value) {
     try { return JSON.parse(value); } catch (err) { return value; }
   }
   return value;
+}
+
+// ---------- VALIDASI INPUT (SERVER-SIDE) ----------
+// Nomor telepon Indonesia: 08xxxxxxxxx, +628xxxxxxxxx, atau 628xxxxxxxxx
+// (setelah spasi/tanda hubung/tanda kurung dibuang), panjang total 9-13 digit.
+function isValidPhone_(phone) {
+  if (phone === undefined || phone === null || String(phone).trim() === '') return true; // kosong = boleh
+  var cleaned = String(phone).replace(/[\s\-\(\)]/g, '');
+  return /^(\+62|62|0)8[0-9]{7,11}$/.test(cleaned);
+}
+
+function isValidLatitude_(lat) {
+  if (lat === undefined || lat === null || String(lat).trim() === '') return true; // kosong = boleh
+  var n = Number(lat);
+  return !isNaN(n) && n >= -90 && n <= 90;
+}
+
+function isValidLongitude_(lng) {
+  if (lng === undefined || lng === null || String(lng).trim() === '') return true; // kosong = boleh
+  var n = Number(lng);
+  return !isNaN(n) && n >= -180 && n <= 180;
+}
+
+// Mengembalikan pesan error pertama yang ditemukan, atau null jika semua valid.
+function validatePelangganData_(data) {
+  if (!data) return 'Data tidak valid.';
+  if (!isValidPhone_(data.noHp)) {
+    return 'Nomor telepon tidak valid. Gunakan format 08xxxxxxxxxx atau +62xxxxxxxxxx.';
+  }
+  if (!isValidLatitude_(data.latitude)) {
+    return 'Latitude tidak valid. Harus berupa angka antara -90 dan 90.';
+  }
+  if (!isValidLongitude_(data.longitude)) {
+    return 'Longitude tidak valid. Harus berupa angka antara -180 dan 180.';
+  }
+  return null;
 }
 
 // ---------- LOGIN / LOGOUT ----------
@@ -180,6 +213,15 @@ function updatePelanggan(token, rowIndex, updatedData) {
   var namaMitra = getNamaMitraFromToken_(token);
   if (!namaMitra) return { success: false, message: 'Sesi habis, silakan login ulang.' };
 
+  if (!updatedData || !String(updatedData.namaPelanggan || '').trim()) {
+    return { success: false, message: 'Nama Pelanggan wajib diisi.' };
+  }
+
+  var validationError = validatePelangganData_(updatedData);
+  if (validationError) {
+    return { success: false, message: validationError };
+  }
+
   var sheet = SpreadsheetApp.getActive().getSheetByName(SHEET_MITRA);
   var rowOwner = sheet.getRange(rowIndex, 4).getValue();
   if (String(rowOwner).trim() !== String(namaMitra).trim()) {
@@ -192,32 +234,6 @@ function updatePelanggan(token, rowIndex, updatedData) {
   sheet.getRange(rowIndex, 5).setValue(updatedData.stasiun);
   sheet.getRange(rowIndex, 6).setValue(updatedData.latitude);
   sheet.getRange(rowIndex, 7).setValue(updatedData.longitude);
-
-  return { success: true };
-}
-
-// ---------- TAMBAH DATA PELANGGAN BARU ----------
-function addPelanggan(token, newData) {
-  var namaMitra = getNamaMitraFromToken_(token);
-  if (!namaMitra) return { success: false, message: 'Sesi habis, silakan login ulang.' };
-
-  if (!newData.namaPelanggan) {
-    return { success: false, message: 'Nama Pelanggan wajib diisi.' };
-  }
-
-  var sheet = SpreadsheetApp.getActive().getSheetByName(SHEET_MITRA);
-  ensureHeaders_(sheet);
-
-  sheet.appendRow([
-    newData.namaPelanggan,
-    newData.noHp,
-    newData.alamat,
-    namaMitra,                 // Nama Mitra otomatis dari sesi login, tidak bisa dipalsukan
-    newData.stasiun,
-    newData.latitude,
-    newData.longitude,
-    ''
-  ]);
 
   return { success: true };
 }
