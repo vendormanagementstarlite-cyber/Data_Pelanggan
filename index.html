@@ -492,6 +492,22 @@
     tbody tr:hover { background: rgba(216,168,60,0.06); }
     tbody tr:last-child td { border-bottom: none; }
 
+    /* Bekukan kolom pertama (Nama Pelanggan) saat tabel digeser horizontal */
+    thead th:first-child,
+    tbody td:first-child {
+      position: sticky;
+      left: 0;
+      z-index: 3;
+      box-shadow: 4px 0 8px -3px rgba(0,0,0,0.5);
+    }
+    thead th:first-child { z-index: 6; }
+    tbody td:first-child {
+      background: #0F1C39;
+      font-weight: 500;
+    }
+    tbody tr:nth-child(even) td:first-child { background: #12203F; }
+    tbody tr:hover td:first-child { background: #1A2440; }
+
     .status-badge {
       padding: 4px 12px 4px 10px;
       border-radius: 20px;
@@ -909,7 +925,7 @@
     let currentMitra = null;
     let allHeaders = [];
     let allRows = [];
-    const PAGE_SIZE = 15;
+    const PAGE_SIZE = 5;
     let currentPage = 1;
     let allRowIds = [];
     let currentEditIndex = null;
