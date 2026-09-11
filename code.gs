@@ -1,39 +1,44 @@
-// ============================================================
-// WEB VERIFIKASI MITRA - BACKEND (Google Apps Script)
-// Tempel file ini di Apps Script Editor (Extensions > Apps Script)
-// pada Google Sheet "Data Pendaftar"
-// ============================================================
+// ============================================
+// KONFIGURASI
+// ============================================
+const SPREADSHEET_ID = '1pl7JndJD6067Dt34xN5hpGcsF_KY28oJ1wcSWOh3Pr4';
+const SHEET_LOGIN = 'Data Login Mitra';
+const SHEET_DATA = 'Data Mitra';
 
-var SHEET_LOGIN = 'Data Login Mitra';   // Nama Mitra | Username | Password
-var SHEET_MITRA = 'Data Mitra';         // Nama Pelanggan | Nomor Telepon | Alamat | Nama Mitra | Stasiun | Latitude | Longitude | Status
-var SESSION_DURATION = 21600;           // 6 jam (detik)
-var HEADER_MITRA = ['Nama Pelanggan', 'Nomor Telepon', 'Alamat', 'Nama Mitra', 'Stasiun', 'Latitude', 'Longitude', 'Status'];
+// Kolom di sheet "Data Login Mitra"
+const LOGIN_COL = {
+  NAMA_MITRA: 0, // A
+  USERNAME: 1,   // B
+  PASSWORD: 2    // C
+};
 
-// ---------- DEBUG: jalankan manual dari editor untuk cek nama tab ----------
-// Pilih fungsi ini di dropdown atas Apps Script editor, klik Run,
-// lalu lihat hasilnya di menu View > Logs (atau Ctrl+Enter)
-function debugCekNamaSheet() {
-  var ss = SpreadsheetApp.getActive();
-  var sheets = ss.getSheets();
-  var names = sheets.map(function(s) { return "'" + s.getName() + "'"; });
-  Logger.log('Nama-nama tab yang terdeteksi: ' + names.join(', '));
-  Logger.log('Mencari SHEET_LOGIN = "' + SHEET_LOGIN + '" -> ditemukan: ' + (ss.getSheetByName(SHEET_LOGIN) !== null));
-  Logger.log('Mencari SHEET_MITRA = "' + SHEET_MITRA + '" -> ditemukan: ' + (ss.getSheetByName(SHEET_MITRA) !== null));
-}
+// Header kolom di sheet "Data Mitra" (harus persis sama urutannya dengan gsheet)
+const DATA_HEADERS = [
+  'Nama Pelanggan',
+  'Nomor Telepon',
+  'Alamat',
+  'Nama Mitra',
+  'Provinsi',
+  'Kota',
+  'Kecamatan',
+  'Kelurahan',
+  'Stasiun',
+  'Longitude',
+  'Latitude',
+  'Status',
+  'Remarks'
+];
 
-// ---------- HALAMAN WEB / API JSON ----------
-// Kalau diakses langsung tanpa parameter ?action=..., tampilkan halaman HTML (untuk tes langsung dari Apps Script).
-// Kalau ada ?action=..., dijalankan sebagai API JSON (dipakai oleh frontend yang di-hosting terpisah, misal GitHub Pages).
-// Frontend memanggil pakai fetch() method GET dengan parameter di URL -
-// ini sengaja dipakai (bukan POST) karena GET tidak kena masalah redirect/CORS preflight di Apps Script Web App.
+// Index kolom "Nama Mitra" di sheet Data Mitra (untuk filter)
+const DATA_NAMA_MITRA_INDEX = 3; // kolom D
+
+// ============================================
+// ENTRY POINT
+// ============================================
 function doGet(e) {
-  var params = (e && e.parameter) || {};
-  if (params.action) {
-    return handleApiRequest_(params);
-  }
   return HtmlService.createTemplateFromFile('Index')
     .evaluate()
-    .setTitle('Verifikasi Mitra')
+    .setTitle('Portal Data Mitra')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
@@ -42,213 +47,74 @@ function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
 
-// Tetap disediakan untuk kompatibilitas kalau ada yang memanggil via POST.
-function doPost(e) {
-  var params = {};
-  if (e && e.postData && e.postData.contents) {
-    try { params = JSON.parse(e.postData.contents); } catch (err) {}
+// ============================================
+// LOGIN
+// ============================================
+function login(username, password) {
+  username = (username || '').toString().trim();
+  password = (password || '').toString().trim();
+
+  if (!username || !password) {
+    return { success: false, message: 'Username dan password wajib diisi.' };
   }
-  return handleApiRequest_(params);
-}
 
-function handleApiRequest_(params) {
-  var out;
-  try {
-    var action = params.action;
-    var result;
-    var data = parseIfJson_(params.data);
-    var rowIndex = params.rowIndex ? parseInt(params.rowIndex, 10) : null;
-
-    switch (action) {
-      case 'login':
-        result = loginMitra(params.username, params.password);
-        break;
-      case 'logout':
-        result = logoutMitra(params.token);
-        break;
-      case 'getData':
-        result = getPelangganData(params.token);
-        break;
-      case 'update':
-        result = updatePelanggan(params.token, rowIndex, data);
-        break;
-      case 'delete':
-        result = deletePelanggan(params.token, rowIndex);
-        break;
-      default:
-        result = { success: false, message: 'Aksi tidak dikenali: ' + action };
-    }
-    out = result;
-  } catch (err) {
-    out = { success: false, message: 'Terjadi kesalahan server: ' + err.message };
-  }
-  return ContentService.createTextOutput(JSON.stringify(out))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-
-// 'data' bisa datang sebagai string JSON (dari query GET) atau sudah berupa object (dari POST JSON)
-function parseIfJson_(value) {
-  if (typeof value === 'string') {
-    try { return JSON.parse(value); } catch (err) { return value; }
-  }
-  return value;
-}
-
-// ---------- VALIDASI INPUT (SERVER-SIDE) ----------
-// Nomor telepon Indonesia: 08xxxxxxxxx, +628xxxxxxxxx, atau 628xxxxxxxxx
-// (setelah spasi/tanda hubung/tanda kurung dibuang), panjang total 9-13 digit.
-function isValidPhone_(phone) {
-  if (phone === undefined || phone === null || String(phone).trim() === '') return true; // kosong = boleh
-  var cleaned = String(phone).replace(/[\s\-\(\)]/g, '');
-  return /^(\+62|62|0)8[0-9]{7,11}$/.test(cleaned);
-}
-
-function isValidLatitude_(lat) {
-  if (lat === undefined || lat === null || String(lat).trim() === '') return true; // kosong = boleh
-  var n = Number(lat);
-  return !isNaN(n) && n >= -90 && n <= 90;
-}
-
-function isValidLongitude_(lng) {
-  if (lng === undefined || lng === null || String(lng).trim() === '') return true; // kosong = boleh
-  var n = Number(lng);
-  return !isNaN(n) && n >= -180 && n <= 180;
-}
-
-// Mengembalikan pesan error pertama yang ditemukan, atau null jika semua valid.
-function validatePelangganData_(data) {
-  if (!data) return 'Data tidak valid.';
-  if (!isValidPhone_(data.noHp)) {
-    return 'Nomor telepon tidak valid. Gunakan format 08xxxxxxxxxx atau +62xxxxxxxxxx.';
-  }
-  if (!isValidLatitude_(data.latitude)) {
-    return 'Latitude tidak valid. Harus berupa angka antara -90 dan 90.';
-  }
-  if (!isValidLongitude_(data.longitude)) {
-    return 'Longitude tidak valid. Harus berupa angka antara -180 dan 180.';
-  }
-  return null;
-}
-
-// ---------- LOGIN / LOGOUT ----------
-function loginMitra(username, password) {
-  var sheet = SpreadsheetApp.getActive().getSheetByName(SHEET_LOGIN);
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_LOGIN);
   if (!sheet) {
-    return { success: false, message: 'Sheet "' + SHEET_LOGIN + '" tidak ditemukan. Cek nama tab di spreadsheet ini (jalankan debugCekNamaSheet di Apps Script untuk melihat daftar nama tab yang benar).' };
+    return { success: false, message: 'Sheet "' + SHEET_LOGIN + '" tidak ditemukan.' };
   }
-  var data = sheet.getDataRange().getValues();
 
-  for (var i = 1; i < data.length; i++) {
-    var namaMitra = data[i][0];
-    var user = data[i][1];
-    var pass = data[i][2];
-    if (!user) continue;
-    if (String(user).trim() === String(username).trim() &&
-        String(pass).trim() === String(password).trim()) {
-      var token = Utilities.getUuid();
-      CacheService.getScriptCache().put(token, namaMitra, SESSION_DURATION);
-      return { success: true, token: token, namaMitra: namaMitra };
+  const values = sheet.getDataRange().getValues();
+  // baris 0 = header, mulai dari baris 1
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i];
+    const rowUsername = (row[LOGIN_COL.USERNAME] || '').toString().trim();
+    const rowPassword = (row[LOGIN_COL.PASSWORD] || '').toString().trim();
+    const namaMitra = (row[LOGIN_COL.NAMA_MITRA] || '').toString().trim();
+
+    if (rowUsername.toLowerCase() === username.toLowerCase() && rowPassword === password) {
+      return {
+        success: true,
+        namaMitra: namaMitra,
+        username: rowUsername
+      };
     }
   }
+
   return { success: false, message: 'Username atau password salah.' };
 }
 
-function logoutMitra(token) {
-  CacheService.getScriptCache().remove(token);
-  return { success: true };
-}
+// ============================================
+// AMBIL DATA SESUAI MITRA YANG LOGIN
+// ============================================
+function getDataMitra(namaMitra) {
+  namaMitra = (namaMitra || '').toString().trim();
+  if (!namaMitra) {
+    return { success: false, message: 'Nama mitra tidak valid.', headers: DATA_HEADERS, rows: [] };
+  }
 
-function getNamaMitraFromToken_(token) {
-  return CacheService.getScriptCache().get(token);
-}
-
-// ---------- AMBIL DATA PELANGGAN (hanya milik mitra yang login) ----------
-function getPelangganData(token) {
-  var namaMitra = getNamaMitraFromToken_(token);
-  if (!namaMitra) return { success: false, message: 'Sesi habis, silakan login ulang.' };
-
-  var sheet = SpreadsheetApp.getActive().getSheetByName(SHEET_MITRA);
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_DATA);
   if (!sheet) {
-    return { success: false, message: 'Sheet "' + SHEET_MITRA + '" tidak ditemukan. Cek nama tab di spreadsheet ini.' };
+    return { success: false, message: 'Sheet "' + SHEET_DATA + '" tidak ditemukan.', headers: DATA_HEADERS, rows: [] };
   }
-  ensureHeaders_(sheet);
-  var data = sheet.getDataRange().getValues();
-  var result = [];
 
-  for (var i = 1; i < data.length; i++) {
-    if (!data[i][0]) continue;
-    if (String(data[i][3]).trim() === String(namaMitra).trim()) {
-      result.push({
-        rowIndex: i + 1, // nomor baris asli di sheet, dipakai utk update
-        namaPelanggan: data[i][0],
-        noHp: data[i][1],
-        alamat: data[i][2],
-        namaMitra: data[i][3],
-        stasiun: data[i][4],
-        latitude: data[i][5],
-        longitude: data[i][6],
-        status: data[i][7] || ''
+  const values = sheet.getDataRange().getValues();
+  const rows = [];
+
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i];
+    const rowNamaMitra = (row[DATA_NAMA_MITRA_INDEX] || '').toString().trim();
+    if (rowNamaMitra.toLowerCase() === namaMitra.toLowerCase()) {
+      // ambil hanya sejumlah kolom sesuai DATA_HEADERS, dan format angka koordinat
+      const cleanedRow = DATA_HEADERS.map((h, idx) => {
+        let val = row[idx];
+        if (val instanceof Date) {
+          val = Utilities.formatDate(val, Session.getScriptTimeZone(), 'dd/MM/yyyy');
+        }
+        return val === null || val === undefined ? '' : val.toString();
       });
+      rows.push(cleanedRow);
     }
   }
-  return { success: true, namaMitra: namaMitra, data: result };
-}
 
-// Mengisi header kolom yang masih kosong, tanpa menimpa header yang sudah ada
-function ensureHeaders_(sheet) {
-  var range = sheet.getRange(1, 1, 1, HEADER_MITRA.length);
-  var header = range.getValues()[0];
-  var changed = false;
-  for (var i = 0; i < HEADER_MITRA.length; i++) {
-    if (!header[i]) {
-      header[i] = HEADER_MITRA[i];
-      changed = true;
-    }
-  }
-  if (changed) range.setValues([header]);
-}
-
-// ---------- UPDATE DATA PELANGGAN ----------
-function updatePelanggan(token, rowIndex, updatedData) {
-  var namaMitra = getNamaMitraFromToken_(token);
-  if (!namaMitra) return { success: false, message: 'Sesi habis, silakan login ulang.' };
-
-  if (!updatedData || !String(updatedData.namaPelanggan || '').trim()) {
-    return { success: false, message: 'Nama Pelanggan wajib diisi.' };
-  }
-
-  var validationError = validatePelangganData_(updatedData);
-  if (validationError) {
-    return { success: false, message: validationError };
-  }
-
-  var sheet = SpreadsheetApp.getActive().getSheetByName(SHEET_MITRA);
-  var rowOwner = sheet.getRange(rowIndex, 4).getValue();
-  if (String(rowOwner).trim() !== String(namaMitra).trim()) {
-    return { success: false, message: 'Akses ditolak: data ini bukan milik mitra Anda.' };
-  }
-
-  sheet.getRange(rowIndex, 1).setValue(updatedData.namaPelanggan);
-  sheet.getRange(rowIndex, 2).setValue(updatedData.noHp);
-  sheet.getRange(rowIndex, 3).setValue(updatedData.alamat);
-  sheet.getRange(rowIndex, 5).setValue(updatedData.stasiun);
-  sheet.getRange(rowIndex, 6).setValue(updatedData.latitude);
-  sheet.getRange(rowIndex, 7).setValue(updatedData.longitude);
-
-  return { success: true };
-}
-
-// ---------- HAPUS DATA PELANGGAN ----------
-function deletePelanggan(token, rowIndex) {
-  var namaMitra = getNamaMitraFromToken_(token);
-  if (!namaMitra) return { success: false, message: 'Sesi habis, silakan login ulang.' };
-
-  var sheet = SpreadsheetApp.getActive().getSheetByName(SHEET_MITRA);
-  var rowOwner = sheet.getRange(rowIndex, 4).getValue();
-  if (String(rowOwner).trim() !== String(namaMitra).trim()) {
-    return { success: false, message: 'Akses ditolak: data ini bukan milik mitra Anda.' };
-  }
-
-  sheet.deleteRow(rowIndex);
-  return { success: true };
+  return { success: true, headers: DATA_HEADERS, rows: rows };
 }
