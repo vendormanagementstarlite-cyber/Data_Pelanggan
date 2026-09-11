@@ -1021,15 +1021,12 @@
     function populateFilters() {
       const kotaIndex = allHeaders.indexOf('Kota');
       const stasiunIndex = allHeaders.indexOf('Stasiun');
-      const statusIndex = allHeaders.indexOf('Status');
 
       const kotaSet = new Set();
       const stasiunSet = new Set();
-      const statusSet = new Set();
       allRows.forEach(row => {
         if (kotaIndex !== -1 && row[kotaIndex]) kotaSet.add(row[kotaIndex]);
         if (stasiunIndex !== -1 && row[stasiunIndex]) stasiunSet.add(row[stasiunIndex]);
-        if (statusIndex !== -1 && row[statusIndex]) statusSet.add(row[statusIndex]);
       });
 
       const kotaSelect = document.getElementById('filterKota');
@@ -1042,8 +1039,18 @@
 
       const statusSelect = document.getElementById('filterStatus');
       statusSelect.innerHTML = '<option value="">Semua Status</option>' +
-        [...statusSet].sort().map(s => '<option value="' + s + '">' + s + '</option>').join('');
+        '<option value="__BELUM_DIUPDATE__">Belum diupdate</option>' +
+        STATUS_OPTIONS.map(s => '<option value="' + s + '">' + s + '</option>').join('');
     }
+
+    // Daftar status yang boleh dipilih, sama persis dengan dropdown di popup edit
+    const STATUS_OPTIONS = [
+      'Berminat pakai Starlite',
+      'Tidak berminat pakai Starlite',
+      'Masih mikir-mikir dulu',
+      'Sudah memakai provider lain',
+      'Masalah keuangan'
+    ];
 
     // Warna badge untuk tiap pilihan status di popup edit
     const STATUS_BADGE_CLASS = {
@@ -1094,7 +1101,14 @@
       allRows.forEach((row, i) => {
         if (kotaFilter && row[kotaIndex] !== kotaFilter) return;
         if (stasiunFilter && row[stasiunIndex] !== stasiunFilter) return;
-        if (statusFilter && row[statusIndex] !== statusFilter) return;
+        if (statusFilter) {
+          const rowStatus = (row[statusIndex] || '').toString().trim();
+          if (statusFilter === '__BELUM_DIUPDATE__') {
+            if (rowStatus) return;
+          } else if (rowStatus !== statusFilter) {
+            return;
+          }
+        }
         if (query && !row.some(cell => (cell || '').toString().toLowerCase().indexOf(query) !== -1)) return;
         indices.push(i);
       });
