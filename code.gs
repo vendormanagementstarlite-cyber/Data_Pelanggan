@@ -1,6 +1,9 @@
 // ============================================
 // KONFIGURASI
 // ============================================
+// URL Web App yang sudah di-deploy (untuk referensi/dokumentasi di README & footer)
+const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyICWUHYy7-KGLNR2S93NP1tOEeF8TACHFIt99uYt21kvdcRew1zrRxAMBG-ycUDJZaKw/exec';
+
 const SPREADSHEET_ID = '1pl7JndJD6067Dt34xN5hpGcsF_KY28oJ1wcSWOh3Pr4';
 const SHEET_LOGIN = 'Data Login Mitra';
 const SHEET_DATA = 'Data Mitra';
@@ -21,7 +24,7 @@ const DATA_HEADERS = [
   'Provinsi',
   'Kota',
   'Kecamatan',
-  'Kelurahan',
+  'Keluarahan',
   'Stasiun',
   'Longitude',
   'Latitude',
@@ -31,6 +34,19 @@ const DATA_HEADERS = [
 
 // Index kolom "Nama Mitra" di sheet Data Mitra (untuk filter)
 const DATA_NAMA_MITRA_INDEX = 3; // kolom D
+
+// Index kolom Status & Remarks di DATA_HEADERS (untuk fitur edit)
+const DATA_STATUS_INDEX = DATA_HEADERS.indexOf('Status');   // 11
+const DATA_REMARKS_INDEX = DATA_HEADERS.indexOf('Remarks'); // 12
+
+// Pilihan status yang boleh disimpan lewat popup edit (validasi sisi server)
+const STATUS_OPTIONS = [
+  'Berminat pakai Starlite',
+  'Tidak berminat pakai Starlite',
+  'Masih mikir-mikir dulu',
+  'Sudah memakai provider lain',
+  'Masalah keuangan'
+];
 
 // ============================================
 // ENTRY POINT
@@ -99,6 +115,7 @@ function getDataMitra(namaMitra) {
 
   const values = sheet.getDataRange().getValues();
   const rows = [];
+  const rowIds = []; // nomor baris asli di sheet (1-based), dipakai untuk fitur edit
 
   for (let i = 1; i < values.length; i++) {
     const row = values[i];
@@ -113,8 +130,49 @@ function getDataMitra(namaMitra) {
         return val === null || val === undefined ? '' : val.toString();
       });
       rows.push(cleanedRow);
+      rowIds.push(i + 1); // +1 karena baris sheet 1-based dan values[0] adalah header
     }
   }
 
-  return { success: true, headers: DATA_HEADERS, rows: rows };
+  return { success: true, headers: DATA_HEADERS, rows: rows, rowIds: rowIds };
+}
+
+// ============================================
+// UPDATE STATUS & REMARKS (dipanggil dari popup edit)
+// ============================================
+function updatePelangganStatus(rowId, namaMitra, status, remarks) {
+  namaMitra = (namaMitra || '').toString().trim();
+  status = (status || '').toString().trim();
+  remarks = (remarks || '').toString();
+  rowId = parseInt(rowId, 10);
+
+  if (!namaMitra) {
+    return { success: false, message: 'Sesi mitra tidak valid, silakan login ulang.' };
+  }
+  if (!rowId || rowId < 2) {
+    return { success: false, message: 'Baris data tidak valid.' };
+  }
+  if (status && STATUS_OPTIONS.indexOf(status) === -1) {
+    return { success: false, message: 'Pilihan status tidak valid.' };
+  }
+
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_DATA);
+  if (!sheet) {
+    return { success: false, message: 'Sheet "' + SHEET_DATA + '" tidak ditemukan.' };
+  }
+  if (rowId > sheet.getLastRow()) {
+    return { success: false, message: 'Baris data tidak ditemukan.' };
+  }
+
+  // Pastikan baris yang diedit memang milik mitra yang sedang login
+  const rowValues = sheet.getRange(rowId, 1, 1, DATA_HEADERS.length).getValues()[0];
+  const rowNamaMitra = (rowValues[DATA_NAMA_MITRA_INDEX] || '').toString().trim();
+  if (rowNamaMitra.toLowerCase() !== namaMitra.toLowerCase()) {
+    return { success: false, message: 'Anda tidak berhak mengubah data ini.' };
+  }
+
+  sheet.getRange(rowId, DATA_STATUS_INDEX + 1).setValue(status);
+  sheet.getRange(rowId, DATA_REMARKS_INDEX + 1).setValue(remarks);
+
+  return { success: true };
 }
